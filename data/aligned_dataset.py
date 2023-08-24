@@ -76,7 +76,7 @@ class AlignedDataset(BaseDataset):
         # else:
         #     transform_A = get_transform(self.opt, params, method=Image.NEAREST, normalize=False)
         #     A_tensor = transform_A(A) * 255.0
-        A = A / 4095
+        A = A / 4095 * 2 - 1
         A_tensor = torch.tensor(A).unsqueeze(0).float()
 
         B_tensor = inst_tensor = feat_tensor = 0
@@ -84,7 +84,7 @@ class AlignedDataset(BaseDataset):
         if self.opt.isTrain or self.opt.use_encoded_image:
             B_path = os.path.join(self.root, A_group['group'], output_condition, image_name)
             B = tifffile.imread(B_path)
-            B = B / 4095
+            B = B / 4095 * 2 - 1
             B_tensor = torch.tensor(B).unsqueeze(0).float()
 
             # transform_B = get_transform(self.opt, params)

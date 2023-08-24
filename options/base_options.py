@@ -10,7 +10,7 @@ class BaseOptions():
 
     def initialize(self):    
         # experiment specifics
-        self.parser.add_argument('--name', type=str, default='label2city', help='name of the experiment. It decides where to store samples and models')        
+        self.parser.add_argument('--name', type=str, default='SRS', help='name of the experiment. It decides where to store samples and models')
         self.parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
         self.parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
         self.parser.add_argument('--model', type=str, default='pix2pixHD', help='which model to use')
@@ -31,8 +31,8 @@ class BaseOptions():
         self.parser.add_argument('--cond_nc', type=int, default=1, help='# of parameter channels')
 
         # for setting inputs
-        self.parser.add_argument('--dataroot', type=str, default='/home/xavier/Documents/Tao-ImageSet/TotalSynthesizedImage/20230703')
-        self.parser.add_argument('--input_list', type=str, nargs='+', default=['group1'], help="List of input folders")
+        self.parser.add_argument('--dataroot', type=str, default='/home/xavier/Documents/Tao-ImageSet/TotalSynthesizedImage/20230703-dataset/train/')
+        self.parser.add_argument('--input_list', type=str, nargs='+', default=['group_0', 'group_1', 'group_2', 'group_3', 'group_4'], help="List of input folders")
         self.parser.add_argument('--input_condition', type=float, default=None, help="The input condition")
         self.parser.add_argument('--output_condition', type=float, default=None, help="The specified output condition, which is required for testing")
 

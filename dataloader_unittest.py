@@ -40,6 +40,15 @@ dataset_size = len(data_loader)
 print('#training images = %d' % dataset_size)
 from matplotlib import pyplot as plt
 for i, data in enumerate(dataset):
+    if i > 1:
+        break
     print(data['input_condition'], data['output_condition'])
-    plt.imshow(np.array(data['label'])[0, 0, :, :])
+    img1 = data['label'].numpy()[0, 0, :, :]
+    img2 = data['image'].numpy()[0, 0, :, :]
+    fig, ax = plt.subplots(1, 2)
+    ax[0].imshow(img1)
+    ax[0].set_title(data['input_condition'])
+    ax[1].imshow(img2)
+    ax[1].set_title(data['output_condition'])
     plt.show()
+
