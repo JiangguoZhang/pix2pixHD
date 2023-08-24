@@ -21,16 +21,21 @@ class BaseOptions():
         self.parser.add_argument('--fp16', action='store_true', default=False, help='train with AMP')
         self.parser.add_argument('--local_rank', type=int, default=0, help='local rank for distributed training')
 
-        # input/output sizes       
-        self.parser.add_argument('--batchSize', type=int, default=1, help='input batch size')
+        # train_label/train_img sizes
+        self.parser.add_argument('--batchSize', type=int, default=2, help='train_label batch size')
         self.parser.add_argument('--loadSize', type=int, default=1024, help='scale images to this size')
         self.parser.add_argument('--fineSize', type=int, default=512, help='then crop to this size')
-        self.parser.add_argument('--label_nc', type=int, default=35, help='# of input label channels')
-        self.parser.add_argument('--input_nc', type=int, default=3, help='# of input image channels')
-        self.parser.add_argument('--output_nc', type=int, default=3, help='# of output image channels')
+        self.parser.add_argument('--label_nc', type=int, default=0, help='# of train_label label channels')
+        self.parser.add_argument('--input_nc', type=int, default=1, help='# of train_label image channels')
+        self.parser.add_argument('--output_nc', type=int, default=1, help='# of train_img image channels')
+        self.parser.add_argument('--cond_nc', type=int, default=1, help='# of parameter channels')
 
         # for setting inputs
-        self.parser.add_argument('--dataroot', type=str, default='./datasets/cityscapes/') 
+        self.parser.add_argument('--dataroot', type=str, default='/home/xavier/Documents/Tao-ImageSet/TotalSynthesizedImage/20230703')
+        self.parser.add_argument('--input_list', type=str, nargs='+', default=['group1'], help="List of input folders")
+        self.parser.add_argument('--input_condition', type=float, default=None, help="The input condition")
+        self.parser.add_argument('--output_condition', type=float, default=None, help="The specified output condition, which is required for testing")
+
         self.parser.add_argument('--resize_or_crop', type=str, default='scale_width', help='scaling and cropping of images at load time [resize_and_crop|crop|scale_width|scale_width_and_crop]')
         self.parser.add_argument('--serial_batches', action='store_true', help='if true, takes images in order to make batches, otherwise takes them randomly')        
         self.parser.add_argument('--no_flip', action='store_true', help='if specified, do not flip the images for data argumentation') 
@@ -51,9 +56,9 @@ class BaseOptions():
         self.parser.add_argument('--niter_fix_global', type=int, default=0, help='number of epochs that we only train the outmost local enhancer')        
 
         # for instance-wise features
-        self.parser.add_argument('--no_instance', action='store_true', help='if specified, do *not* add instance map as input')        
-        self.parser.add_argument('--instance_feat', action='store_true', help='if specified, add encoded instance features as input')
-        self.parser.add_argument('--label_feat', action='store_true', help='if specified, add encoded label features as input')        
+        self.parser.add_argument('--no_instance', action='store_true', help='if specified, do *not* add instance map as train_label')
+        self.parser.add_argument('--instance_feat', action='store_true', help='if specified, add encoded instance features as train_label')
+        self.parser.add_argument('--label_feat', action='store_true', help='if specified, add encoded label features as train_label')
         self.parser.add_argument('--feat_num', type=int, default=3, help='vector length for encoded features')        
         self.parser.add_argument('--load_features', action='store_true', help='if specified, load precomputed feature maps')
         self.parser.add_argument('--n_downsample_E', type=int, default=4, help='# of downsampling layers in encoder') 
@@ -66,6 +71,7 @@ class BaseOptions():
         if not self.initialized:
             self.initialize()
         self.opt = self.parser.parse_args()
+        self.opt.no_instance = True
         self.opt.isTrain = self.isTrain   # train or test
 
         str_ids = self.opt.gpu_ids.split(',')

@@ -50,7 +50,7 @@ class UIModel(BaseModel):
         label_img = label_img.resize((w, h), Image.NEAREST)
         label_map = self.toTensor(label_img)           
         
-        # onehot vector input for label map
+        # onehot vector train_label for label map
         self.label_map = label_map.cuda()
         oneHot_size = (1, opt.label_nc, h, w)
         input_label = self.Tensor(torch.Size(oneHot_size)).zero_()
@@ -128,12 +128,12 @@ class UIModel(BaseModel):
             # backup current maps
             self.backup_current_state() 
 
-            # change both the label map and the network input
+            # change both the label map and the network train_label
             self.label_map[idx_src[:,0], idx_src[:,1], idx_src[:,2], idx_src[:,3]] = label_tgt
             self.net_input[idx_src[:,0], idx_src[:,1] + label_src, idx_src[:,2], idx_src[:,3]] = 0
             self.net_input[idx_src[:,0], idx_src[:,1] + label_tgt, idx_src[:,2], idx_src[:,3]] = 1                                    
             
-            # update the instance map (and the network input)
+            # update the instance map (and the network train_label)
             if inst_tgt > 1000:
                 # if different instances have different ids, give the new object a new id
                 tgt_indices = (self.inst_map > label_tgt * 1000) & (self.inst_map < (label_tgt+1) * 1000)
@@ -166,13 +166,13 @@ class UIModel(BaseModel):
             if save:
                 self.backup_current_state()
 
-            # update the label map (and the network input) in the stroke region            
+            # update the label map (and the network train_label) in the stroke region
             self.label_map[idx_src[:,0], idx_src[:,1], idx_src[:,2], idx_src[:,3]] = label_tgt
             for k in range(self.opt.label_nc):
                 self.net_input[idx_src[:,0], idx_src[:,1] + k, idx_src[:,2], idx_src[:,3]] = 0
             self.net_input[idx_src[:,0], idx_src[:,1] + label_tgt, idx_src[:,2], idx_src[:,3]] = 1                 
 
-            # update the instance map (and the network input)
+            # update the instance map (and the network train_label)
             self.inst_map[idx_src[:,0], idx_src[:,1], idx_src[:,2], idx_src[:,3]] = label_tgt
             self.net_input[:,-1,:,:] = self.get_edges(self.inst_map)
             
@@ -340,7 +340,7 @@ class UIModel(BaseModel):
 
         dict_list = [('fake_image', self.fake_image), ('mask', mask)]
 
-        if getLabel: # only output label map if needed to save bandwidth
+        if getLabel: # only train_img label map if needed to save bandwidth
             label = util.tensor2label(self.net_input.data[0], self.opt.label_nc)                    
             dict_list += [('label', label)]
 

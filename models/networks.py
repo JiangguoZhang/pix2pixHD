@@ -3,6 +3,26 @@ import torch.nn as nn
 import functools
 from torch.autograd import Variable
 import numpy as np
+from torch_utils.ops import bias_act
+from torch_utils import persistence
+from torch_utils import misc
+
+#----------------------------------------------------------------------------
+
+@misc.profiled_function
+def normalize_2nd_moment(x, dim=1, eps=1e-8):
+    return x * (x.square().mean(dim=dim, keepdim=True) + eps).rsqrt()
+
+#----------------------------------------------------------------------------
+@misc.profiled_function
+def concatenate_conditions_dynamic(image, conditions):
+    # Get the spatial dimensions of the image dynamically
+    _, _, height, width = image.shape
+    # Expand the conditions to have the same spatial dimensions as the image
+    conditions_expanded = conditions.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, height, width)
+    # Concatenate along the channel dimension
+    concatenated = torch.cat([image, conditions_expanded], dim=1)
+    return concatenated
 
 ###############################################################################
 # Functions
@@ -24,13 +44,13 @@ def get_norm_layer(norm_type='instance'):
         raise NotImplementedError('normalization layer [%s] is not found' % norm_type)
     return norm_layer
 
-def define_G(input_nc, output_nc, ngf, netG, n_downsample_global=3, n_blocks_global=9, n_local_enhancers=1, 
+def define_G(input_nc, output_nc, cond_nc, ngf, netG, n_downsample_global=3, n_blocks_global=9, n_local_enhancers=1,
              n_blocks_local=3, norm='instance', gpu_ids=[]):    
     norm_layer = get_norm_layer(norm_type=norm)     
     if netG == 'global':    
-        netG = GlobalGenerator(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global, norm_layer)       
+        netG = GlobalGenerator(input_nc, output_nc, cond_nc, ngf, n_downsample_global, n_blocks_global, norm_layer)
     elif netG == 'local':        
-        netG = LocalEnhancer(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global, 
+        netG = LocalEnhancer(input_nc, output_nc, cond_nc, ngf, n_downsample_global, n_blocks_global,
                                   n_local_enhancers, n_blocks_local, norm_layer)
     elif netG == 'encoder':
         netG = Encoder(input_nc, output_nc, ngf, n_downsample_global, norm_layer)
@@ -43,9 +63,9 @@ def define_G(input_nc, output_nc, ngf, netG, n_downsample_global=3, n_blocks_glo
     netG.apply(weights_init)
     return netG
 
-def define_D(input_nc, ndf, n_layers_D, norm='instance', use_sigmoid=False, num_D=1, getIntermFeat=False, gpu_ids=[]):        
+def define_D(input_nc, cond_nc, ndf, n_layers_D, norm='instance', use_sigmoid=False, num_D=1, getIntermFeat=False, gpu_ids=[]):
     norm_layer = get_norm_layer(norm_type=norm)   
-    netD = MultiscaleDiscriminator(input_nc, ndf, n_layers_D, norm_layer, use_sigmoid, num_D, getIntermFeat)   
+    netD = MultiscaleDiscriminator(input_nc, cond_nc, ndf, n_layers_D, norm_layer, use_sigmoid, num_D, getIntermFeat)
     print(netD)
     if len(gpu_ids) > 0:
         assert(torch.cuda.is_available())
@@ -127,17 +147,18 @@ class VGGLoss(nn.Module):
 # Generator
 ##############################################################################
 class LocalEnhancer(nn.Module):
-    def __init__(self, input_nc, output_nc, ngf=32, n_downsample_global=3, n_blocks_global=9, 
-                 n_local_enhancers=1, n_blocks_local=3, norm_layer=nn.BatchNorm2d, padding_type='reflect'):        
+    def __init__(self, input_nc, output_nc, cond_nc, ngf=32, n_downsample_global=3, n_blocks_global=9,
+                 n_local_enhancers=1, n_blocks_local=3, norm_layer=nn.BatchNorm2d, padding_type='reflect', wdim=32):
         super(LocalEnhancer, self).__init__()
         self.n_local_enhancers = n_local_enhancers
         
         ###### global generator model #####           
         ngf_global = ngf * (2**n_local_enhancers)
-        model_global = GlobalGenerator(input_nc, output_nc, ngf_global, n_downsample_global, n_blocks_global, norm_layer).model        
+        model_global = GlobalGenerator(input_nc, output_nc, cond_nc, ngf_global, n_downsample_global, n_blocks_global, norm_layer).model
         model_global = [model_global[i] for i in range(len(model_global)-3)] # get rid of final convolution layers        
         self.model = nn.Sequential(*model_global)                
 
+        input_nc += wdim
         ###### local enhancer layers #####
         for n in range(1, n_local_enhancers+1):
             ### downsample            
@@ -163,14 +184,17 @@ class LocalEnhancer(nn.Module):
             setattr(self, 'model'+str(n)+'_2', nn.Sequential(*model_upsample))                  
         
         self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
+        self.cond_nc = cond_nc
+        self.condition_processor = MappingNetwork(self.cond_nc * 2, 0, wdim, None)
 
-    def forward(self, input): 
-        ### create input pyramid
+    def forward(self, input, input_condition, output_condition):
+        ### create train_label pyramid
+        conditions = torch.concatenate([input_condition, output_condition], 1)
+        input = concatenate_conditions_dynamic(input, self.condition_processor(conditions))
         input_downsampled = [input]
         for i in range(self.n_local_enhancers):
             input_downsampled.append(self.downsample(input_downsampled[-1]))
-
-        ### output at coarest level
+        ### train_img at coarest level
         output_prev = self.model(input_downsampled[-1])        
         ### build up one layer at a time
         for n_local_enhancers in range(1, self.n_local_enhancers+1):
@@ -181,12 +205,12 @@ class LocalEnhancer(nn.Module):
         return output_prev
 
 class GlobalGenerator(nn.Module):
-    def __init__(self, input_nc, output_nc, ngf=64, n_downsampling=3, n_blocks=9, norm_layer=nn.BatchNorm2d, 
-                 padding_type='reflect'):
+    def __init__(self, input_nc, output_nc, cond_nc, ngf=64, n_downsampling=3, n_blocks=9, norm_layer=nn.BatchNorm2d,
+                 padding_type='reflect', wdim=32):
         assert(n_blocks >= 0)
         super(GlobalGenerator, self).__init__()        
         activation = nn.ReLU(True)        
-
+        input_nc += wdim
         model = [nn.ReflectionPad2d(3), nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0), norm_layer(ngf), activation]
         ### downsample
         for i in range(n_downsampling):
@@ -206,9 +230,14 @@ class GlobalGenerator(nn.Module):
                        norm_layer(int(ngf * mult / 2)), activation]
         model += [nn.ReflectionPad2d(3), nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0), nn.Tanh()]        
         self.model = nn.Sequential(*model)
-            
-    def forward(self, input):
-        return self.model(input)             
+
+        self.cond_nc = cond_nc
+        self.condition_processor = MappingNetwork(self.cond_nc * 2, 0, wdim, None)
+
+    def forward(self, input, input_condition, output_condition):
+        conditions = torch.concatenate([input_condition, output_condition], 1)
+        input = concatenate_conditions_dynamic(input, self.condition_processor(conditions))
+        return self.model(input)
         
 # Define a resnet block
 class ResnetBlock(nn.Module):
@@ -290,13 +319,13 @@ class Encoder(nn.Module):
         return outputs_mean
 
 class MultiscaleDiscriminator(nn.Module):
-    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d, 
-                 use_sigmoid=False, num_D=3, getIntermFeat=False):
+    def __init__(self, input_nc, cond_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d,
+                 use_sigmoid=False, num_D=3, getIntermFeat=False, wdim=32):
         super(MultiscaleDiscriminator, self).__init__()
         self.num_D = num_D
         self.n_layers = n_layers
         self.getIntermFeat = getIntermFeat
-     
+        input_nc += wdim
         for i in range(num_D):
             netD = NLayerDiscriminator(input_nc, ndf, n_layers, norm_layer, use_sigmoid, getIntermFeat)
             if getIntermFeat:                                
@@ -306,6 +335,8 @@ class MultiscaleDiscriminator(nn.Module):
                 setattr(self, 'layer'+str(i), netD.model)
 
         self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
+        self.cond_nc = cond_nc
+        self.condition = MappingNetwork(self.cond_nc * 2, 0, wdim, None)
 
     def singleD_forward(self, model, input):
         if self.getIntermFeat:
@@ -316,7 +347,9 @@ class MultiscaleDiscriminator(nn.Module):
         else:
             return [model(input)]
 
-    def forward(self, input):        
+    def forward(self, input, input_condition, output_condition):
+        conditions = torch.concatenate([input_condition, output_condition], 1)
+        input = concatenate_conditions_dynamic(input, self.condition_processor(conditions))
         num_D = self.num_D
         result = []
         input_downsampled = input
@@ -414,3 +447,115 @@ class Vgg19(torch.nn.Module):
         h_relu5 = self.slice5(h_relu4)                
         out = [h_relu1, h_relu2, h_relu3, h_relu4, h_relu5]
         return out
+
+
+@persistence.persistent_class
+class FullyConnectedLayer(nn.Module):
+    def __init__(self,
+        in_features,                # Number of input features.
+        out_features,               # Number of output features.
+        bias            = True,     # Apply additive bias before the activation function?
+        activation      = 'linear', # Activation function: 'relu', 'lrelu', etc.
+        lr_multiplier   = 1,        # Learning rate multiplier.
+        bias_init       = 0,        # Initial value for the additive bias.
+    ):
+        super().__init__()
+        self.activation = activation
+        self.weight = torch.nn.Parameter(torch.randn([out_features, in_features]) / lr_multiplier)
+        self.bias = torch.nn.Parameter(torch.full([out_features], np.float32(bias_init))) if bias else None
+        self.weight_gain = lr_multiplier / np.sqrt(in_features)
+        self.bias_gain = lr_multiplier
+
+    def forward(self, x):
+        w = self.weight.to(x.dtype) * self.weight_gain
+        b = self.bias
+        if b is not None:
+            b = b.to(x.dtype)
+            if self.bias_gain != 1:
+                b = b * self.bias_gain
+
+        if self.activation == 'linear' and b is not None:
+            x = torch.addmm(b.unsqueeze(0), x, w.t())
+        else:
+            x = x.matmul(w.t())
+            x = bias_act.bias_act(x, b, act=self.activation)
+        return x
+
+
+@persistence.persistent_class
+class MappingNetwork(nn.Module):
+    def __init__(self,
+        z_dim,                      # Input latent (Z) dimensionality, 0 = no latent.
+        c_dim,                      # Conditioning label (C) dimensionality, 0 = no label.
+        w_dim,                      # Intermediate latent (W) dimensionality.
+        num_ws,                     # Number of intermediate latents to output, None = do not broadcast.
+        num_layers      = 4,        # Number of mapping layers.
+        embed_features  = None,     # Label embedding dimensionality, None = same as w_dim.
+        layer_features  = None,     # Number of intermediate features in the mapping layers, None = same as w_dim.
+        activation      = 'lrelu',  # Activation function: 'relu', 'lrelu', etc.
+        lr_multiplier   = 0.01,     # Learning rate multiplier for the mapping layers.
+        w_avg_beta      = 0.995,    # Decay for tracking the moving average of W during training, None = do not track.
+    ):
+        super().__init__()
+        self.z_dim = z_dim
+        self.c_dim = c_dim
+        self.w_dim = w_dim
+        self.num_ws = num_ws
+        self.num_layers = num_layers
+        self.w_avg_beta = w_avg_beta
+
+        if embed_features is None:
+            embed_features = w_dim
+        if c_dim == 0:
+            embed_features = 0
+        if layer_features is None:
+            layer_features = w_dim
+        features_list = [z_dim + embed_features] + [layer_features] * (num_layers - 1) + [w_dim]
+
+        if c_dim > 0:
+            self.embed = FullyConnectedLayer(c_dim, embed_features)
+        for idx in range(num_layers):
+            in_features = features_list[idx]
+            out_features = features_list[idx + 1]
+            layer = FullyConnectedLayer(in_features, out_features, activation=activation, lr_multiplier=lr_multiplier)
+            setattr(self, f'fc{idx}', layer)
+
+        if num_ws is not None and w_avg_beta is not None:
+            self.register_buffer('w_avg', torch.zeros([w_dim]))
+
+    def forward(self, z, c, truncation_psi=1, truncation_cutoff=None, skip_w_avg_update=False):
+        # Embed, normalize, and concat inputs.
+        x = None
+        with torch.autograd.profiler.record_function('input'):
+            if self.z_dim > 0:
+                misc.assert_shape(z, [None, self.z_dim])
+                x = normalize_2nd_moment(z.to(torch.float32))
+            if self.c_dim > 0:
+                misc.assert_shape(c, [None, self.c_dim])
+                y = normalize_2nd_moment(self.embed(c.to(torch.float32)))
+                x = torch.cat([x, y], dim=1) if x is not None else y
+
+        # Main layers.
+        for idx in range(self.num_layers):
+            layer = getattr(self, f'fc{idx}')
+            x = layer(x)
+
+        # Update moving average of W.
+        if self.w_avg_beta is not None and self.training and not skip_w_avg_update:
+            with torch.autograd.profiler.record_function('update_w_avg'):
+                self.w_avg.copy_(x.detach().mean(dim=0).lerp(self.w_avg, self.w_avg_beta))
+
+        # Broadcast.
+        if self.num_ws is not None:
+            with torch.autograd.profiler.record_function('broadcast'):
+                x = x.unsqueeze(1).repeat([1, self.num_ws, 1])
+
+        # Apply truncation.
+        if truncation_psi != 1:
+            with torch.autograd.profiler.record_function('truncate'):
+                assert self.w_avg_beta is not None
+                if self.num_ws is None or truncation_cutoff is None:
+                    x = self.w_avg.lerp(x, truncation_psi)
+                else:
+                    x[:, :truncation_cutoff] = self.w_avg.lerp(x[:, :truncation_cutoff], truncation_psi)
+        return x

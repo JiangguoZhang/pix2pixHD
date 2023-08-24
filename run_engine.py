@@ -70,10 +70,10 @@ def get_input_output_names(trt_engine):
         
         if (trt_engine.binding_is_input(b)):
             maps.append(name)
-            print("Found input: ", name)
+            print("Found train_label: ", name)
         else:
             maps.append(name)
-            print("Found output: ", name)
+            print("Found train_img: ", name)
 
         print("shape=" + str(dims.C()) + " , " + str(dims.H()) + " , " + str(dims.W()))
         print("dtype=" + str(type))
