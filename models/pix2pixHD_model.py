@@ -124,8 +124,9 @@ class Pix2PixHDModel(BaseModel):
         if not self.opt.no_instance:
             inst_map = inst_map.data.cuda()
             edge_map = self.get_edges(inst_map)
-            input_label = torch.cat((input_label, edge_map), dim=1)         
-        input_label = Variable(input_label, volatile=infer)
+            input_label = torch.cat((input_label, edge_map), dim=1)
+        with torch.no_grad():
+            input_label = Variable(input_label)
 
         # real images for training
         if real_image is not None:
@@ -201,7 +202,7 @@ class Pix2PixHDModel(BaseModel):
     def inference(self, label, inst, input_condition, output_condition, image=None):
         # Encode Inputs        
         image = Variable(image) if image is not None else None
-        input_label, inst_map, real_image, _, ic_map, oc_map = self.encode_input(Variable(label), Variable(inst), image, input_condition, output_condition, infer=True)
+        input_label, inst_map, real_image, _, ic_map, oc_map = self.encode_input(Variable(label), Variable(inst), image, None, input_condition, output_condition, infer=True)
 
         # Fake Generation
         if self.use_features:

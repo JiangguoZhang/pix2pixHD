@@ -11,7 +11,7 @@ class BaseOptions():
     def initialize(self):    
         # experiment specifics
         self.parser.add_argument('--name', type=str, default='SRS', help='name of the experiment. It decides where to store samples and models')
-        self.parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+        self.parser.add_argument('--gpu_ids', type=str, default='0,1', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
         self.parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
         self.parser.add_argument('--model', type=str, default='pix2pixHD', help='which model to use')
         self.parser.add_argument('--norm', type=str, default='instance', help='instance normalization or batch normalization')        
@@ -22,7 +22,7 @@ class BaseOptions():
         self.parser.add_argument('--local_rank', type=int, default=0, help='local rank for distributed training')
 
         # train_label/train_img sizes
-        self.parser.add_argument('--batchSize', type=int, default=2, help='train_label batch size')
+        self.parser.add_argument('--batchSize', type=int, default=1, help='train_label batch size')
         self.parser.add_argument('--loadSize', type=int, default=1024, help='scale images to this size')
         self.parser.add_argument('--fineSize', type=int, default=512, help='then crop to this size')
         self.parser.add_argument('--label_nc', type=int, default=0, help='# of train_label label channels')
@@ -31,10 +31,10 @@ class BaseOptions():
         self.parser.add_argument('--cond_nc', type=int, default=1, help='# of parameter channels')
 
         # for setting inputs
-        self.parser.add_argument('--dataroot', type=str, default='/home/xavier/Documents/Tao-ImageSet/TotalSynthesizedImage/20230703-dataset/train/')
+        self.parser.add_argument('--dataroot', type=str, default='/home/xavier/Documents/Tao-ImageSet/TotalSynthesizedImage/20230703-dataset/test/')
         self.parser.add_argument('--input_list', type=str, nargs='+', default=['group_0', 'group_1', 'group_2', 'group_3', 'group_4'], help="List of input folders")
-        self.parser.add_argument('--input_condition', type=float, default=None, help="The input condition")
-        self.parser.add_argument('--output_condition', type=float, default=None, help="The specified output condition, which is required for testing")
+        self.parser.add_argument('--input_condition', type=str, default=None, help="The input condition")
+        self.parser.add_argument('--output_condition', type=str, default='1', help="The specified output condition, which is required for testing")
 
         self.parser.add_argument('--resize_or_crop', type=str, default='scale_width', help='scaling and cropping of images at load time [resize_and_crop|crop|scale_width|scale_width_and_crop]')
         self.parser.add_argument('--serial_batches', action='store_true', help='if true, takes images in order to make batches, otherwise takes them randomly')        

@@ -59,10 +59,15 @@ class AlignedDataset(BaseDataset):
         A_group = self.A_paths[index % len(self.A_paths)]
         # Choose an image
         image_name = random.choice(A_group['names'])
-        # Choose input and output conditions
-        if self.input_condition:
-            input_condition = self.input_condition
+        # # Choose input and output conditions
+        # if self.input_condition:
+        #     input_condition = self.input_condition
+        # else:
+        #     input_condition, output_condition = random.sample(A_group['conditions'], 2)
+        if self.output_condition:
             output_condition = self.output_condition
+            remaining_lst = [val for val in A_group['conditions'] if val != output_condition]
+            input_condition = random.choice(remaining_lst)
         else:
             input_condition, output_condition = random.sample(A_group['conditions'], 2)
         A_path = os.path.join(self.root, A_group['group'], input_condition, image_name)

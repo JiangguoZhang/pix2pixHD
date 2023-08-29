@@ -56,12 +56,13 @@ for i, data in enumerate(dataset):
     elif opt.onnx:
         generated = run_onnx(opt.onnx, opt.data_type, minibatch, [data['label'], data['inst']])
     else:        
-        generated = model.inference(data['label'], data['inst'], data['image'])
+        generated = model.inference(Variable(data['label']), Variable(data['inst']), Variable(data['input_condition']), Variable(data['output_condition']))
         
     visuals = OrderedDict([('input_label', util.tensor2label(data['label'][0], opt.label_nc)),
+                           ('real_image', util.tensor2im(data['image'][0])),
                            ('synthesized_image', util.tensor2im(generated.data[0]))])
     img_path = data['path']
     print('process image... %s' % img_path)
-    visualizer.save_images(webpage, visuals, img_path)
+    visualizer.save_test_images(webpage, visuals, img_path)
 
 webpage.save()
