@@ -8,6 +8,9 @@ import util.util as util
 from util.visualizer import Visualizer
 from util import html
 import torch
+import numpy as np
+from pytorch_msssim import ssim
+import torch.nn.functional as F
 
 opt = TestOptions().parse(save=False)
 opt.nThreads = 1   # test code only supports nThreads = 1
@@ -34,7 +37,9 @@ if not opt.engine and not opt.onnx:
         print(model)
 else:
     from run_engine import run_trt_engine, run_onnx
-    
+
+cum_mse = 0
+cum_ssim = 0
 for i, data in enumerate(dataset):
     if i >= opt.how_many:
         break
@@ -57,12 +62,14 @@ for i, data in enumerate(dataset):
         generated = run_onnx(opt.onnx, opt.data_type, minibatch, [data['label'], data['inst']])
     else:        
         generated = model.inference(Variable(data['label']), Variable(data['inst']), Variable(data['input_condition']), Variable(data['output_condition']))
-        
-    visuals = OrderedDict([('input_label', util.tensor2label(data['label'][0], opt.label_nc)),
-                           ('real_image', util.tensor2im(data['image'][0])),
-                           ('synthesized_image', util.tensor2im(generated.data[0]))])
+    cum_mse += F.mse_loss(data['image'].cpu(), generated.data.cpu())
+    cum_ssim += ssim(data['image'].cpu(), generated.data.cpu())
+    visuals = OrderedDict([('input_label', util.tensor2im(data['label'][0], imtype=np.uint8, max_val=255)),
+                           ('real_image', util.tensor2im(data['image'][0], imtype=np.uint8, max_val=255)),
+                           ('synthesized_image', util.tensor2im(generated.data[0], imtype=np.uint8, max_val=255))])
     img_path = data['path']
     print('process image... %s' % img_path)
     visualizer.save_test_images(webpage, visuals, img_path)
+print(f'MSE={cum_mse/len(dataset)}, ssim={cum_ssim/len(dataset)}')
 
 webpage.save()

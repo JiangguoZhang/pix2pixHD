@@ -134,6 +134,27 @@ class Visualizer():
         image_dir = webpage.get_image_dir()
         short_path = ntpath.basename(image_path[0])
         name = os.path.splitext(short_path)[0]
+        parts = image_path[0].split("/")
+        word_index = parts.index('test')
+        folder = '/'.join(parts[word_index + 1: -1])
+        webpage.add_header(name)
+        ims = []
+        txts = []
+        links = []
+        for label, image_numpy in visuals.items():
+            image_name = '%s_%s.jpg' % (name, label)
+            os.makedirs(os.path.join(image_dir, folder), exist_ok=True)
+            save_path = os.path.join(image_dir, folder, image_name)
+            util.save_image(image_numpy, save_path)
+            ims.append(image_name)
+            txts.append(label)
+            links.append(image_name)
+        webpage.add_images(ims, txts, links, width=self.win_size)
+
+    def save_test_images_tif(self, webpage, visuals, image_path):
+        image_dir = webpage.get_image_dir()
+        short_path = ntpath.basename(image_path[0])
+        name = os.path.splitext(short_path)[0]
 
         parts = image_path[0].split("/")
         word_index = parts.index('test')
@@ -143,13 +164,13 @@ class Visualizer():
         ims = []
         txts = []
         links = []
-
+        import tifffile
         for label, image_numpy in visuals.items():
-            image_name = '%s_%s.jpg' % (name, label)
-            os.makedirs(folder, exist_ok=True)
+            image_name = '%s_%s.tif' % (name, label)
+            os.makedirs(os.path.join(image_dir, folder), exist_ok=True)
             save_path = os.path.join(image_dir, folder, image_name)
-            util.save_image(image_numpy, save_path)
-
+            # util.save_image(image_numpy, save_path)
+            tifffile.imsave(save_path, image_numpy)
             ims.append(image_name)
             txts.append(label)
             links.append(image_name)
