@@ -3,8 +3,8 @@ clear;
 k = [1, 0.189, 0.189*2, 0.189*4, 0.189/2, 0.189/5, 0.189/10, 0.189/100];
 
 for fidx = 1:6
-    folderpath = ['D:\JRC-work\PROJECTs\DL-Enhanced SRS\20230906-noisebatch',...
-        '\group_',num2str(fidx-1)];
+    folderpath = [num2str(fidx-1)];
+    mkdir(folderpath);
     cd(folderpath);
     lp_length = round(32*2^(fidx-1));
     for j = 1:1:length(k)
