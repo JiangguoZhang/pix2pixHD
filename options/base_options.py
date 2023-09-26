@@ -22,7 +22,7 @@ class BaseOptions():
         self.parser.add_argument('--local_rank', type=int, default=0, help='local rank for distributed training')
 
         # train_label/train_img sizes
-        self.parser.add_argument('--batchSize', type=int, default=1, help='train_label batch size')
+        self.parser.add_argument('--batchSize', type=int, default=3, help='train_label batch size')
         self.parser.add_argument('--loadSize', type=int, default=1024, help='scale images to this size')
         self.parser.add_argument('--fineSize', type=int, default=512, help='then crop to this size')
         self.parser.add_argument('--label_nc', type=int, default=0, help='# of train_label label channels')
@@ -35,8 +35,8 @@ class BaseOptions():
         self.parser.add_argument('--input_list', type=str, nargs='+', default=['group_5'], help="List of input folders")
         self.parser.add_argument('--input_condition', type=str, default=None, help="The input condition")
         self.parser.add_argument('--output_condition', type=str, default='1', help="The specified output condition, which is required for testing")
-        self.parser.add_argument('--input_condition_range', type=float, default=[1E-6, 1], help="The input condition")
-        self.parser.add_argument('--output_condition_range', type=float, default=[1E-6, 1], help="The specified output condition, which is required for testing")
+        self.parser.add_argument('--input_condition_range', type=float, default=[1E-5, 1], help="The input condition")
+        self.parser.add_argument('--output_condition_range', type=float, default=[1E-5, 1], help="The specified output condition, which is required for testing")
         self.parser.add_argument('--synthesized', action='store_true', default=True, help='if specified, use tensorboard logging. Requires tensorflow installed')
         self.parser.add_argument('--dataset_size', type=int, default=1000, help='dataset size')
 

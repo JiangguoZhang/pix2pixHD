@@ -106,18 +106,19 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
             visualizer.plot_current_errors(errors, total_steps)
             #call(["nvidia-smi", "--format=csv", "--query-gpu=memory.used,memory.free"]) 
 
-
+        ### display train_img images
+        if save_fake and total_steps % opt.save_latest_freq == save_delta:
+            visuals = OrderedDict([(f'input_label_k={data["input_condition"].numpy()[0][0]:.4f}',
+                                    util.tensor2label(data['label'][0], opt.label_nc)),
+                                   ('synthesized_image', util.tensor2im(generated.data[0])),
+                                   (f'real_image_k={data["output_condition"].numpy()[0][0]:.4f}',
+                                    util.tensor2im(data['image'][0]))])
+            visualizer.display_current_results(visuals, epoch, total_steps)
         ### save latest model
         if total_steps % opt.save_latest_freq == save_delta:
             print('saving the latest model (epoch %d, total_steps %d)' % (epoch, total_steps))
             model.module.save('latest')            
             np.savetxt(iter_path, (epoch, epoch_iter), delimiter=',', fmt='%d')
-            ### display train_img images
-            if save_fake:
-                visuals = OrderedDict([(f'input_label_k={data["input_condition"][0].numpy()}', util.tensor2label(data['label'][0], opt.label_nc)),
-                                       ('synthesized_image', util.tensor2im(generated.data[0])),
-                                       (f'real_image_k={data["output_condition"][0].numpy()}', util.tensor2im(data['image'][0]))])
-                visualizer.display_current_results(visuals, epoch, total_steps)
 
         if epoch_iter >= dataset_size:
             break
