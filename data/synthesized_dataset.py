@@ -11,6 +11,7 @@ import cv2
 from scipy.signal import lfilter
 from skimage.util import random_noise
 
+
 class SynthesizedDataset(BaseDataset):
 
     @staticmethod
@@ -69,8 +70,8 @@ class SynthesizedDataset(BaseDataset):
 
     def caimgen(self, lp_length, imgsize):
         mask = self.elementaryCellularAutomata(np.random.randint(255), lp_length, lp_length, np.random.random())
-        pix_value = np.round(np.random.rand(lp_length, lp_length) * 4095).astype(int)
-        imgseed = np.array(mask * pix_value, dtype=np.double)
+        pix_value = np.random.rand(lp_length, lp_length) * 2 - 1
+        imgseed = mask * pix_value
 
         imgraw = cv2.resize(imgseed, (imgsize * 2, imgsize * 2))  # Double the image size
         imgraw = imgraw[imgsize - 1:2 * imgsize - 1, :]  # Crop the image
@@ -89,7 +90,7 @@ class SynthesizedDataset(BaseDataset):
 
     def initialize(self, opt):
         self.opt = opt
-        self.root = opt.dataroot    
+        self.root = opt.dataroot
 
         # self.exchange = opt.condition_exchange
         ### train_label A (label maps)
@@ -101,17 +102,17 @@ class SynthesizedDataset(BaseDataset):
         self.dataset_size = 0
         self.loadSize = opt.loadSize
         self.synthesized = opt.synthesized
-        if self.synthesized: # If use synthesized, then input_condition, output_condition are ranges.
-            self.dataset_size = opt.dataset_size
-            self.input_condition_range = opt.input_condition_range
-            self.output_condition_range = opt.output_condition_range
-        else:
+        self.dataset_size = opt.dataset_size
+        self.input_condition_range = opt.input_condition_range
+        self.output_condition_range = opt.output_condition_range
+        if not self.synthesized:  # If use synthesized, then input_condition, output_condition are ranges.
             for group in opt.input_list:
                 group_info = {'group': group,
                               'conditions': os.listdir(os.path.join(self.root, group))}
                 group_info['names'] = os.listdir(os.path.join(self.root, group, group_info['conditions'][0]))
-                self.dataset_size += len(group_info['conditions']) * len(group_info['names'])
+                # self.dataset_size += len(group_info['conditions']) * len(group_info['names'])
                 self.A_paths.append(group_info)
+        self.bias = len(self.A_paths) * 5
 
         ### instance maps
         if not opt.no_instance:
@@ -119,30 +120,33 @@ class SynthesizedDataset(BaseDataset):
             self.inst_paths = sorted(make_dataset(self.dir_inst))
 
         ### load precomputed instance-wise encoded features
-        if opt.load_features:                              
+        if opt.load_features:
             self.dir_feat = os.path.join(opt.dataroot, opt.phase + '_feat')
             print('----------- loading features from %s ----------' % self.dir_feat)
             self.feat_paths = sorted(make_dataset(self.dir_feat))
 
         # self.dataset_size = len(self.A_paths)
-      
+
+    def random_crop(self, img1, img2):
+        start_idxs = np.random.randint(0, np.shape(img1)[0] - self.loadSize, 2)
+        return (img1[start_idxs[0]:start_idxs[0]+self.loadSize, start_idxs[1]:start_idxs[1]+self.loadSize],
+                img2[start_idxs[0]:start_idxs[0]+self.loadSize, start_idxs[1]:start_idxs[1]+self.loadSize],)
+
     def __getitem__(self, index):
         B = inst_tensor = feat_tensor = 0
-        if self.synthesized:
-            input_condition = random.uniform(self.input_condition_range[0], self.input_condition_range[1])
-            output_condition = random.uniform(self.output_condition_range[0], self.output_condition_range[1])
-            lp_length = int(32 * 2**random.randint(0, 5))
+        if self.synthesized or index % (len(self.A_paths) + self.bias) >= len(self.A_paths):
+            input_condition = pow(10, random.uniform(self.input_condition_range[0], self.input_condition_range[1]))
+            output_condition = 1
+            lp_length = int(32 * 2 ** random.randint(0, 5))
             img_template = self.caimgen(lp_length, self.loadSize)
-            A = img_template + random_noise(img_template, mode='s&p') #random_noise(np.uint16(img_template), mode='speckle')
+            A = random_noise(img_template, mode='speckle')
             A = self.blurgen(A, input_condition)[:, self.loadSize:]
-            A = np.uint16(A)
             if self.opt.isTrain or self.opt.use_encoded_image:
-                B = img_template + random_noise(img_template, mode='s&p')#np.random.randn(*img_template.shape)
+                B = random_noise(img_template, mode='speckle')
                 B = self.blurgen(B, output_condition)[:, self.loadSize:]
-                B = np.uint16(B)
             A_path = ''
-        else:
-            ### train_label A (label maps)
+        else:  # Use stratefied sampling
+            # train_label A (label maps)
             A_group = self.A_paths[index % len(self.A_paths)]
             # Choose an image
             image_name = random.choice(A_group['names'])
@@ -158,21 +162,20 @@ class SynthesizedDataset(BaseDataset):
             else:
                 input_condition, output_condition = random.sample(A_group['conditions'], 2)
             A_path = os.path.join(self.root, A_group['group'], input_condition, image_name)
-            A = tifffile.imread(A_path)
-
-            ### train_label B (real images)
+            A = tifffile.imread(A_path) / 4095 * 2 - 1
+            # train_label B (real images)
             if self.opt.isTrain or self.opt.use_encoded_image:
                 B_path = os.path.join(self.root, A_group['group'], output_condition, image_name)
-                B = tifffile.imread(B_path)
+                B = tifffile.imread(B_path) / 4095 * 2 - 1
+            if np.shape(A)[0] != self.loadSize:
+                A, B = self.random_crop(A, B)
 
-        A = A / 4095 * 2 - 1
         A_tensor = torch.tensor(A).unsqueeze(0).float()
-        B = B / 4095 * 2 - 1
         B_tensor = torch.tensor(B).unsqueeze(0).float()
         ic_tensor = torch.tensor(float(input_condition)).unsqueeze(0).float()
         oc_tensor = torch.tensor(float(output_condition)).unsqueeze(0).float()
 
-        input_dict = {'label': A_tensor, 'inst': inst_tensor, 'image': B_tensor, 
+        input_dict = {'label': A_tensor, 'inst': inst_tensor, 'image': B_tensor,
                       'feat': feat_tensor, 'path': A_path, 'input_condition': ic_tensor,
                       'output_condition': oc_tensor}
 

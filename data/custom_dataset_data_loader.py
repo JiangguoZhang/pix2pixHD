@@ -3,13 +3,8 @@ from data.base_data_loader import BaseDataLoader
 
 
 def CreateDataset(opt):
-    dataset = None
-    if opt.synthesized:
-        from data.synthesized_dataset import SynthesizedDataset
-        dataset = SynthesizedDataset()
-    else:
-        from data.aligned_dataset import AlignedDataset
-        dataset = AlignedDataset()
+    from data.synthesized_dataset import SynthesizedDataset
+    dataset = SynthesizedDataset()
 
     print("dataset [%s] was created" % (dataset.name()))
     dataset.initialize(opt)
