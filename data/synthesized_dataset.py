@@ -134,7 +134,7 @@ class SynthesizedDataset(BaseDataset):
 
     def __getitem__(self, index):
         B = inst_tensor = feat_tensor = 0
-        if self.synthesized or index % (len(self.A_paths) + self.bias) >= len(self.A_paths):
+        if self.synthesized or (self.opt.isTrain and index % (len(self.A_paths) + self.bias) >= len(self.A_paths)):
             input_condition = pow(10, random.uniform(self.input_condition_range[0], self.input_condition_range[1]))
             output_condition = 1
             lp_length = int(32 * 2 ** random.randint(0, 5))
@@ -169,7 +169,7 @@ class SynthesizedDataset(BaseDataset):
                 B = tifffile.imread(B_path) / 4095 * 2 - 1
             if np.shape(A)[0] != self.loadSize:
                 A, B = self.random_crop(A, B)
-
+        input_condition = 0.189
         A_tensor = torch.tensor(A).unsqueeze(0).float()
         B_tensor = torch.tensor(B).unsqueeze(0).float()
         ic_tensor = torch.tensor(float(input_condition)).unsqueeze(0).float()

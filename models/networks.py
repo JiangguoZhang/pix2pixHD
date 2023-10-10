@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import functools
 from torch.autograd import Variable
 import numpy as np
@@ -148,7 +149,8 @@ class VGGLoss(nn.Module):
 ##############################################################################
 class LocalEnhancer(nn.Module):
     def __init__(self, input_nc, output_nc, cond_nc, ngf=32, n_downsample_global=3, n_blocks_global=9,
-                 n_local_enhancers=1, n_blocks_local=3, norm_layer=nn.BatchNorm2d, padding_type='reflect', wdim=32):
+                 n_local_enhancers=1, n_blocks_local=3, norm_layer=nn.BatchNorm2d, padding_type='reflect',
+                 mlp_hidden_dim=64, mlp_depth=6, conditional_channels=16):
         super(LocalEnhancer, self).__init__()
         self.n_local_enhancers = n_local_enhancers
         
@@ -158,7 +160,7 @@ class LocalEnhancer(nn.Module):
         model_global = [model_global[i] for i in range(len(model_global)-3)] # get rid of final convolution layers        
         self.model = nn.Sequential(*model_global)                
 
-        input_nc += wdim
+        input_nc += conditional_channels
         ###### local enhancer layers #####
         for n in range(1, n_local_enhancers+1):
             ### downsample            
@@ -185,12 +187,14 @@ class LocalEnhancer(nn.Module):
         
         self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
         self.cond_nc = cond_nc
-        self.condition_processor = MLP(self.cond_nc * 2, wdim, wdim, 4)
+        self.condition_processor = ConditionProcessor(self.cond_nc * 2, mlp_hidden_dim, mlp_depth, conditional_channels)
 
     def forward(self, input, input_condition, output_condition):
         ### create train_label pyramid
+        _, _, height, width = input.shape
         conditions = torch.concatenate([input_condition, output_condition], 1)
-        input = concatenate_conditions_dynamic(input, self.condition_processor(conditions))
+        conditions_tensor = self.condition_processor(conditions, height, width)
+        input = torch.cat([input, conditions_tensor], dim=1)
         input_downsampled = [input]
         for i in range(self.n_local_enhancers):
             input_downsampled.append(self.downsample(input_downsampled[-1]))
@@ -206,11 +210,11 @@ class LocalEnhancer(nn.Module):
 
 class GlobalGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, cond_nc, ngf=64, n_downsampling=3, n_blocks=9, norm_layer=nn.BatchNorm2d,
-                 padding_type='reflect', wdim=32):
+                 padding_type='reflect', mlp_hidden_dim=64, mlp_depth=6, conditional_channels=16):
         assert(n_blocks >= 0)
         super(GlobalGenerator, self).__init__()        
         activation = nn.ReLU(True)        
-        input_nc += wdim
+        input_nc += conditional_channels
         model = [nn.ReflectionPad2d(3), nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0), norm_layer(ngf), activation]
         ### downsample
         for i in range(n_downsampling):
@@ -232,11 +236,13 @@ class GlobalGenerator(nn.Module):
         self.model = nn.Sequential(*model)
 
         self.cond_nc = cond_nc
-        self.condition_processor = MLP(self.cond_nc * 2, wdim, wdim, 4)
+        self.condition_processor = ConditionProcessor(self.cond_nc * 2, mlp_hidden_dim, mlp_depth, conditional_channels)
 
     def forward(self, input, input_condition, output_condition):
+        _, _, height, width = input.shape
         conditions = torch.concatenate([input_condition, output_condition], 1)
-        input = concatenate_conditions_dynamic(input, self.condition_processor(conditions))
+        conditions_tensor = self.condition_processor(conditions, height, width)
+        input = torch.cat([input, conditions_tensor], dim=1)
         return self.model(input)
         
 # Define a resnet block
@@ -320,12 +326,12 @@ class Encoder(nn.Module):
 
 class MultiscaleDiscriminator(nn.Module):
     def __init__(self, input_nc, cond_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d,
-                 use_sigmoid=False, num_D=3, getIntermFeat=False, wdim=32):
+                 use_sigmoid=False, num_D=3, getIntermFeat=False, mlp_hidden_dim=64, mlp_depth=6, conditional_channels=16):
         super(MultiscaleDiscriminator, self).__init__()
         self.num_D = num_D
         self.n_layers = n_layers
         self.getIntermFeat = getIntermFeat
-        input_nc += wdim
+        input_nc += conditional_channels
         for i in range(num_D):
             netD = NLayerDiscriminator(input_nc, ndf, n_layers, norm_layer, use_sigmoid, getIntermFeat)
             if getIntermFeat:                                
@@ -336,7 +342,7 @@ class MultiscaleDiscriminator(nn.Module):
 
         self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
         self.cond_nc = cond_nc
-        self.condition_processor = MLP(self.cond_nc * 2, wdim, wdim, 4)
+        self.condition_processor = ConditionProcessor(self.cond_nc * 2, mlp_hidden_dim, mlp_depth, conditional_channels)
 
     def singleD_forward(self, model, input):
         if self.getIntermFeat:
@@ -348,8 +354,10 @@ class MultiscaleDiscriminator(nn.Module):
             return [model(input)]
 
     def forward(self, input, input_condition, output_condition):
+        _, _, height, width = input.shape
         conditions = torch.concatenate([input_condition, output_condition], 1)
-        input = concatenate_conditions_dynamic(input, self.condition_processor(conditions))
+        conditions_tensor = self.condition_processor(conditions, height, width)
+        input = torch.cat([input, conditions_tensor], dim=1)
         num_D = self.num_D
         result = []
         input_downsampled = input
@@ -449,24 +457,39 @@ class Vgg19(torch.nn.Module):
         return out
 
 
-class MLP(nn.Module):
-    def __init__(self, input_dim, output_dim, hidden_dim, depth):
-        super(MLP, self).__init__()
+class ConditionProcessor(nn.Module):
+    def __init__(self, input_dim, hidden_dim=64, depth=6, output_channels=16, base_height=16, base_width=16):
+        super(ConditionProcessor, self).__init__()
 
-        # Create the first layer (from input to first hidden layer)
+        # Part 1: Enhanced MLP
         layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU()]
+        for _ in range(depth - 2):
+            layers.extend([nn.Linear(hidden_dim, hidden_dim * 2), nn.ReLU()])
+            hidden_dim *= 2
+        layers.append(nn.Linear(hidden_dim, hidden_dim))  # Final dense representation
+        self.enhanced_mlp = nn.Sequential(*layers)
 
-        # Create intermediate hidden layers
-        for _ in range(depth - 2):  # Subtracting 2 because we are manually defining the first and last layers
-            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()])
+        # Part 2: Dynamic Spatial Broadcast
+        self.fc1 = nn.Linear(hidden_dim, 512)
+        self.fc2 = nn.Linear(512, output_channels * base_height * base_width)
+        self.base_height = base_height
+        self.base_width = base_width
+        self.output_channels = output_channels
 
-        # Create the last layer (from last hidden layer to output)
-        layers.append(nn.Linear(hidden_dim, output_dim))
+    def forward(self, x, target_height, target_width):
+        # Enhanced MLP processing
+        x = self.enhanced_mlp(x)
 
-        self.model = nn.Sequential(*layers)
+        # Spatial Broadcasting
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        x = x.view(x.size(0), self.output_channels, self.base_height, self.base_width)
 
-    def forward(self, x):
-        return self.model(x)
+        # Adaptive upsampling to match target dimensions
+        x = F.interpolate(x, size=(target_height, target_width), mode='bilinear', align_corners=True)
+
+        return x
+
 
 # @persistence.persistent_class
 # class FullyConnectedLayer(nn.Module):

@@ -10,7 +10,7 @@ class BaseOptions():
 
     def initialize(self):    
         # experiment specifics
-        self.parser.add_argument('--name', type=str, default='SRS-stratefied', help='name of the experiment. It decides where to store samples and models')
+        self.parser.add_argument('--name', type=str, default='SRS-stratefied2', help='name of the experiment. It decides where to store samples and models')
         self.parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
         self.parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
         self.parser.add_argument('--model', type=str, default='pix2pixHD', help='which model to use')
@@ -22,16 +22,16 @@ class BaseOptions():
         self.parser.add_argument('--local_rank', type=int, default=0, help='local rank for distributed training')
 
         # train_label/train_img sizes
-        self.parser.add_argument('--batchSize', type=int, default=30, help='train_label batch size')
-        self.parser.add_argument('--loadSize', type=int, default=256, help='scale images to this size')
-        self.parser.add_argument('--fineSize', type=int, default=128, help='then crop to this size')
+        self.parser.add_argument('--batchSize', type=int, default=8, help='train_label batch size')
+        self.parser.add_argument('--loadSize', type=int, default=512, help='scale images to this size')
+        self.parser.add_argument('--fineSize', type=int, default=256, help='then crop to this size')
         self.parser.add_argument('--label_nc', type=int, default=0, help='# of train_label label channels')
         self.parser.add_argument('--input_nc', type=int, default=1, help='# of train_label image channels')
         self.parser.add_argument('--output_nc', type=int, default=1, help='# of train_img image channels')
         self.parser.add_argument('--cond_nc', type=int, default=1, help='# of parameter channels')
 
         # for setting inputs
-        self.parser.add_argument('--dataroot', type=str, default='/home/xavier/Documents/Tao-ImageSet/training-set/train')
+        self.parser.add_argument('--dataroot', type=str, default='/home/xavier/Documents/Tao-ImageSet/training-set/test')
         self.parser.add_argument('--input_list', type=str, nargs='+', default=['group_0', 'group_1'], help="List of input folders")
         self.parser.add_argument('--input_condition', type=str, default=None, help="The input condition")
         self.parser.add_argument('--output_condition', type=str, default='1', help="The specified output condition, which is required for testing")
@@ -47,7 +47,7 @@ class BaseOptions():
         self.parser.add_argument('--max_dataset_size', type=int, default=float("inf"), help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
 
         # for displays
-        self.parser.add_argument('--display_winsize', type=int, default=256,  help='display window size')
+        self.parser.add_argument('--display_winsize', type=int, default=512,  help='display window size')
         self.parser.add_argument('--tf_log', action='store_true', help='if specified, use tensorboard logging. Requires tensorflow installed')
 
         # for generator
