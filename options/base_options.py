@@ -22,16 +22,16 @@ class BaseOptions():
         self.parser.add_argument('--local_rank', type=int, default=0, help='local rank for distributed training')
 
         # train_label/train_img sizes
-        self.parser.add_argument('--batchSize', type=int, default=8, help='train_label batch size')
-        self.parser.add_argument('--loadSize', type=int, default=512, help='scale images to this size')
-        self.parser.add_argument('--fineSize', type=int, default=256, help='then crop to this size')
+        self.parser.add_argument('--batchSize', type=int, default=3, help='train_label batch size')
+        self.parser.add_argument('--loadSize', type=int, default=1024, help='scale images to this size')
+        self.parser.add_argument('--fineSize', type=int, default=512, help='then crop to this size')
         self.parser.add_argument('--label_nc', type=int, default=0, help='# of train_label label channels')
         self.parser.add_argument('--input_nc', type=int, default=1, help='# of train_label image channels')
         self.parser.add_argument('--output_nc', type=int, default=1, help='# of train_img image channels')
         self.parser.add_argument('--cond_nc', type=int, default=1, help='# of parameter channels')
 
         # for setting inputs
-        self.parser.add_argument('--dataroot', type=str, default='/home/xavier/Documents/Tao-ImageSet/training-set/test')
+        self.parser.add_argument('--dataroot', type=str, default='/home/xavier/Documents/Tao-ImageSet/training-set/train')
         self.parser.add_argument('--input_list', type=str, nargs='+', default=['group_0', 'group_1'], help="List of input folders")
         self.parser.add_argument('--input_condition', type=str, default=None, help="The input condition")
         self.parser.add_argument('--output_condition', type=str, default='1', help="The specified output condition, which is required for testing")
