@@ -31,7 +31,7 @@ class BaseOptions():
         self.parser.add_argument('--cond_nc', type=int, default=1, help='# of parameter channels')
 
         # for setting inputs
-        self.parser.add_argument('--dataroot', type=str, default='/home/xavier/Documents/Tao-ImageSet/training-set/train')
+        self.parser.add_argument('--dataroot', type=str, default='/media/xavier/Storage/Tao-ImageSet/training-set/train')
         self.parser.add_argument('--input_list', type=str, nargs='+', default=['group_0', 'group_1'], help="List of input folders")
         self.parser.add_argument('--input_condition', type=str, default=None, help="The input condition")
         self.parser.add_argument('--output_condition', type=str, default='1', help="The specified output condition, which is required for testing")
